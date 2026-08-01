@@ -1,0 +1,174 @@
+# Guardrail default policy.
+#
+# This is a real, working starting point — not a placeholder. Every rule
+# here is deterministic: if it matches, the reason is exactly the line
+# below that matched, no statistical guessing involved.
+#
+# Edit this file (or point GUARDRAIL_POLICY / --policy at your own copy)
+# to change what your agents are allowed to do. No code changes needed.
+# Tool names below are examples (wallet.transfer, send_email, ...) — rename
+# them to match whatever your own agent actually calls its tools.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Rate limiting: sliding window, per (agent, tool). Backed by SQLite, so it
+# survives process restarts (see guardrail/storage/rate_limiter.py).
+# ---------------------------------------------------------------------------
+rate_limits:
+  default:
+    max_calls: 60
+    window_seconds: 60
+  overrides:
+    send_email:
+      max_calls: 10
+      window_seconds: 3600
+    execute_code:
+      max_calls: 20
+      window_seconds: 60
+    install_package:
+      max_calls: 10
+      window_seconds: 3600
+    wallet.transfer:
+      max_calls: 5
+      window_seconds: 3600
+    delete_file:
+      max_calls: 30
+      window_seconds: 3600
+    execute_sql:
+      max_calls: 100
+      window_seconds: 3600
+    http.request:
+      max_calls: 120
+      window_seconds: 60
+    post_to_social_media:
+      max_calls: 5
+      window_seconds: 3600
+    send_webhook:
+      max_calls: 30
+      window_seconds: 3600
+
+# ---------------------------------------------------------------------------
+# Tools that are never allowed, regardless of arguments. Empty by default —
+# populate with anything your deployment should never expose to an agent
+# at all (as opposed to "expose but always confirm", below).
+# ---------------------------------------------------------------------------
+blocked_tools: []
+
+# ---------------------------------------------------------------------------
+# Tools that always produce WARN (never silently ALLOW) — wire a real
+# on_warn callback (see guardrail/decorator.py, or guardrail/confirmation/
+# for a ready-made web UI) to route these to an actual human.
+# ---------------------------------------------------------------------------
+confirmation_required_tools:
+  - wallet.transfer
+  - wallet.approve
+  - send_email
+  - delete_file
+  - execute_code
+  - execute_sql
+  - install_package
+  - post_to_social_media
+  - send_webhook
+  - modify_dns_record
+  - deploy
+
+# ---------------------------------------------------------------------------
+# Regex patterns checked against the JSON-serialized arguments of EVERY
+# call. These catch classic destructive/exfiltration patterns regardless
+# of which tool they show up in — a prompt-injected agent trying to run a
+# fork bomb through a "run this snippet" tool gets caught the same way as
+# one trying it through a dedicated shell tool.
+# ---------------------------------------------------------------------------
+argument_patterns:
+  - name: destructive_shell_command
+    pattern: 'rm\s+-rf\s+/(?=\s|"|''|$)|:\(\)\{.*\};:|curl[^|\n]*\|\s*(sh|bash)|wget[^|\n]*\|\s*(sh|bash)'
+    severity: BLOCK
+    message: "Argument contains a known destructive or self-replicating shell pattern"
+
+  - name: recursive_permission_or_ownership_change
+    pattern: 'chmod\s+(-R|--recursive)\s+777\s+/|chown\s+(-R|--recursive)\s+\S+\s+/(?=\s|"|$)'
+    severity: BLOCK
+    message: "Argument attempts a recursive permission/ownership change at the filesystem root"
+
+  - name: firewall_or_network_defense_disabled
+    pattern: '(?i)iptables\s+-F|ufw\s+disable|systemctl\s+stop\s+(firewalld|ufw)'
+    severity: BLOCK
+    message: "Argument attempts to flush or disable host firewall rules"
+
+  - name: docker_socket_mount
+    pattern: '/var/run/docker\.sock'
+    severity: BLOCK
+    message: "Argument mounts the Docker socket, which grants host-level container escape"
+
+  - name: destructive_sql
+    pattern: '(?i)\b(DROP|TRUNCATE)\s+(TABLE|DATABASE)\b'
+    severity: BLOCK
+    message: "Argument contains a destructive SQL statement (DROP/TRUNCATE TABLE or DATABASE)"
+
+  - name: unscoped_sql_mutation
+    pattern: '(?i)\b(DELETE\s+FROM|UPDATE)\s+\w+\s*(SET\s+[^;]*)?(;|"|$)'
+    severity: WARN
+    message: "SQL statement may be missing a WHERE clause — check it isn't a full-table mutation"
+
+  - name: possible_credential_exfiltration
+    pattern: '(AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|-----BEGIN (RSA|OPENSSH|EC) PRIVATE KEY-----|ghp_[A-Za-z0-9]{36})'
+    severity: BLOCK
+    message: "Argument appears to contain a live credential or private key"
+
+  - name: path_traversal_to_sensitive_files
+    pattern: '(\.\./)+.*(\.ssh/id_rsa|\.aws/credentials|/etc/shadow|\.env)'
+    severity: BLOCK
+    message: "Argument references a path-traversal pattern targeting a sensitive file"
+
+  - name: cloud_metadata_ssrf
+    pattern: '169\.254\.169\.254|metadata\.google\.internal'
+    severity: BLOCK
+    message: "Argument targets a cloud instance-metadata endpoint — classic SSRF/credential-theft pattern"
+
+  - name: force_push_to_protected_branch
+    pattern: 'git\s+push(?=.*(--force|-f\b))(?=.*\b(main|master|production)\b)'
+    severity: BLOCK
+    message: "Argument force-pushes to a protected branch"
+
+# ---------------------------------------------------------------------------
+# Numeric caps: look up `field` in a tool's arguments and cap it. Unknown
+# agents (fewer than `known_agent_threshold` prior decisions — see
+# GuardrailEngine) get the tighter `max_unknown_agent` limit.
+# ---------------------------------------------------------------------------
+numeric_caps:
+  wallet.transfer:
+    field: amount
+    max_unknown_agent: 5
+    max_known_agent: 1000
+  wallet.approve:
+    field: amount
+    max_unknown_agent: 0
+    max_known_agent: 1000
+  delete_file:
+    field: file_count
+    max_unknown_agent: 1
+    max_known_agent: 50
+  api_spend:
+    field: amount_usd
+    max_unknown_agent: 1
+    max_known_agent: 100
+
+# ---------------------------------------------------------------------------
+# Domain allow/deny checks on a specific argument field. `mode: denylist`
+# blocks listed domains; `mode: allowlist` blocks everything NOT listed
+# (an empty allowlist means "not enforced yet" rather than "deny all").
+# ---------------------------------------------------------------------------
+domain_rules:
+  http.request:
+    field: url
+    mode: denylist
+    domains: []   # populate with domains you never want an agent hitting
+  send_email:
+    field: recipient
+    mode: allowlist
+    domains: []   # populate to restrict outgoing email to known recipients
+  send_webhook:
+    field: url
+    mode: denylist
+    domains: []   # populate to block known exfiltration/paste-bin style endpoints

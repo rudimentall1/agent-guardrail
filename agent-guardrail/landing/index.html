@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guardrail — a policy firewall for AI agent tool calls</title>
+<meta name="description" content="Guardrail blocks, warns, or allows an AI agent's tool calls based on deterministic rules you write — not a risk score you have to trust.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --blueprint: #0d2b45;
+    --blueprint-deep: #091f34;
+    --paper: #eef3f7;
+    --paper-dim: #b8cbdb;
+    --grid: #3d6d94;
+    --grid-faint: rgba(74, 127, 168, 0.35);
+    --allow: #4fd68c;
+    --warn: #f0b429;
+    --block: #ef5b4e;
+    --radius: 3px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--blueprint);
+    background-image:
+      linear-gradient(var(--grid-faint) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-faint) 1px, transparent 1px);
+    background-size: 32px 32px;
+    color: var(--paper);
+    font-family: "IBM Plex Sans", sans-serif;
+    line-height: 1.55;
+  }
+
+  h1, h2, h3, .display {
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  code, .mono, pre {
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  a { color: var(--paper); }
+
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* --- crop-mark section divider, used instead of a plain hairline --- */
+  .crop {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 24px;
+    display: flex;
+    justify-content: space-between;
+    opacity: 0.55;
+  }
+  .crop span { width: 10px; height: 10px; position: relative; }
+  .crop span::before, .crop span::after {
+    content: ""; position: absolute; background: var(--grid);
+  }
+  .crop span::before { width: 10px; height: 1px; top: 4px; left: 0; }
+  .crop span::after { width: 1px; height: 10px; left: 4px; top: 0; }
+
+  /* --- header --- */
+  header {
+    padding: 20px 0;
+  }
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .wordmark {
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700; font-size: 15px; letter-spacing: 0.06em;
+    text-transform: uppercase; text-decoration: none; color: var(--paper);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .wordmark .dot { width: 8px; height: 8px; background: var(--allow); border-radius: 50%; display: inline-block; }
+  .nav-links { display: flex; gap: 28px; font-size: 13px; }
+  .nav-links a { text-decoration: none; color: var(--paper-dim); }
+  .nav-links a:hover { color: var(--paper); }
+
+  /* --- hero --- */
+  .hero { padding: 64px 0 40px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--grid); margin-bottom: 18px; display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before { content: ""; width: 24px; height: 1px; background: var(--grid); }
+  .hero h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.08;
+    max-width: 780px;
+  }
+  .hero h1 .accent { color: var(--paper-dim); font-weight: 400; }
+  .hero p.lede {
+    max-width: 620px; margin-top: 20px; font-size: 17px; color: var(--paper-dim);
+  }
+  .hero-actions { margin-top: 32px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn {
+    font-family: "IBM Plex Mono", monospace; font-size: 13px;
+    padding: 12px 20px; border-radius: var(--radius); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--grid);
+  }
+  .btn-primary { background: var(--paper); color: var(--blueprint-deep); border-color: var(--paper); font-weight: 600; }
+  .btn-ghost { color: var(--paper); }
+  .btn-ghost:hover { border-color: var(--paper); }
+
+  /* --- schematic / interactive demo --- */
+  .schematic {
+    margin-top: 56px;
+    border: 1px solid var(--grid-faint);
+    border-radius: 6px;
+    padding: 28px 24px 20px;
+    background: rgba(9, 31, 52, 0.4);
+  }
+  .schematic-label {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--grid); margin-bottom: 20px;
+  }
+  .demo-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 24px; }
+  .demo-btn {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    background: transparent; border: 1px solid var(--grid-faint); color: var(--paper-dim);
+    padding: 9px 14px; border-radius: var(--radius); cursor: pointer; transition: all 0.15s ease;
+  }
+  .demo-btn:hover { border-color: var(--grid); color: var(--paper); }
+  .demo-btn.active { border-color: var(--paper); color: var(--paper); background: rgba(238,243,247,0.06); }
+
+  svg#pipeline { width: 100%; height: auto; display: block; }
+  .pipe-line { fill: none; stroke: var(--grid-faint); stroke-width: 1.5; stroke-dasharray: 4 4; }
+  .pipe-line.lit { stroke: var(--paper-dim); stroke-dasharray: none; transition: stroke 0.3s ease; }
+  .node-box {
+    fill: rgba(238,243,247,0.03); stroke: var(--grid-faint); stroke-width: 1;
+    transition: stroke 0.3s ease, fill 0.3s ease;
+  }
+  .node-box.lit { stroke: var(--paper-dim); fill: rgba(238,243,247,0.07); }
+  .node-label { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; fill: var(--paper-dim); }
+  .dim-label { font-family: "IBM Plex Mono", monospace; font-size: 9px; fill: var(--grid); letter-spacing: 0.03em; }
+  .token {
+    r: 5; fill: var(--paper); opacity: 0;
+  }
+  .result-box { fill: rgba(238,243,247,0.03); stroke: var(--grid-faint); stroke-width: 1; }
+  .result-box.allow { stroke: var(--allow); }
+  .result-box.warn { stroke: var(--warn); }
+  .result-box.block { stroke: var(--block); }
+  .result-text { font-family: "Space Grotesk", sans-serif; font-weight: 600; font-size: 13px; }
+  .result-text.allow { fill: var(--allow); }
+  .result-text.warn { fill: var(--warn); }
+  .result-text.block { fill: var(--block); }
+
+  .demo-output {
+    margin-top: 18px; padding: 14px 16px; border-radius: var(--radius);
+    background: rgba(0,0,0,0.2); border: 1px solid var(--grid-faint);
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--paper-dim);
+    min-height: 20px;
+  }
+  .demo-output .rule { color: var(--paper); }
+
+  /* --- sections --- */
+  section { padding: 64px 0; }
+  .section-head { max-width: 620px; margin-bottom: 40px; }
+  .section-head .eyebrow { margin-bottom: 12px; }
+  .section-head h2 { font-size: 28px; }
+  .section-head p { color: var(--paper-dim); margin-top: 12px; font-size: 15.5px; }
+
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+    background: var(--grid-faint); border: 1px solid var(--grid-faint); border-radius: 6px; overflow: hidden;
+  }
+  .compare > div { background: var(--blueprint); padding: 24px; }
+  .compare h3 { font-size: 14px; font-family: "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 14px; }
+  .compare .no h3 { color: var(--block); }
+  .compare .yes h3 { color: var(--allow); }
+  .compare ul { margin: 0; padding-left: 18px; color: var(--paper-dim); font-size: 14px; }
+  .compare li { margin-bottom: 10px; }
+
+  .modules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .module {
+    border: 1px solid var(--grid-faint); border-radius: 6px; padding: 22px;
+    position: relative;
+  }
+  .module .num {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--grid);
+    position: absolute; top: 18px; right: 20px;
+  }
+  .module h3 { font-size: 16px; margin-bottom: 10px; padding-right: 30px; }
+  .module p { color: var(--paper-dim); font-size: 13.5px; margin: 0 0 12px; }
+  .module .tag {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 10.5px;
+    padding: 3px 8px; border-radius: 2px; border: 1px solid var(--grid-faint); color: var(--paper-dim);
+  }
+
+  .install {
+    border: 1px solid var(--grid-faint); border-radius: 6px; overflow: hidden;
+  }
+  .install-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+    border-bottom: 1px solid var(--grid-faint); background: rgba(0,0,0,0.15);
+  }
+  .install-head span { width: 8px; height: 8px; border-radius: 50%; background: var(--grid-faint); }
+  .install-head .path { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--paper-dim); margin-left: 6px; }
+  pre.code {
+    margin: 0; padding: 18px 20px; overflow-x: auto; font-size: 13px; color: var(--paper);
+    background: rgba(0,0,0,0.12);
+  }
+  .code .c1 { color: var(--grid); }
+  .code .c2 { color: var(--allow); }
+
+  footer {
+    padding: 40px 0 60px; color: var(--paper-dim); font-size: 13px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  footer a { color: var(--paper-dim); }
+  footer a:hover { color: var(--paper); }
+
+  @media (max-width: 720px) {
+    .compare { grid-template-columns: 1fr; }
+    .modules { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="wordmark" href="#"><span class="dot"></span>Guardrail</a>
+    <nav class="nav-links">
+      <a href="#demo">Demo</a>
+      <a href="#why">Why</a>
+      <a href="#use">Usage</a>
+      <a href="#install">Install</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap hero">
+  <div class="eyebrow">policy firewall · mcp server · python</div>
+  <h1>Your agent wants to run a command.<br><span class="accent">Guardrail decides if it's allowed to.</span></h1>
+  <p class="lede">
+    A deterministic rule engine that sits between an AI agent's decision to call
+    a tool and the tool actually running. No risk score to trust — every
+    decision points at the exact rule that fired.
+  </p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="#install">Get started →</a>
+    <a class="btn btn-ghost" href="#demo">Try the live demo</a>
+  </div>
+
+  <div class="schematic" id="demo">
+    <div class="schematic-label">// live decision pipeline — click an action</div>
+    <div class="demo-buttons">
+      <button class="demo-btn" data-case="safe">wallet.transfer · $2 · known agent</button>
+      <button class="demo-btn" data-case="oversized">wallet.transfer · $9,999 · new agent</button>
+      <button class="demo-btn" data-case="destructive">execute_code · "rm -rf /"</button>
+    </div>
+
+    <svg id="pipeline" viewBox="0 0 900 200" preserveAspectRatio="xMidYMid meet">
+      <!-- dimension guide -->
+      <text x="10" y="16" class="dim-label">AGENT INTENT</text>
+      <text x="820" y="16" class="dim-label" text-anchor="end">OUTCOME</text>
+
+      <!-- nodes -->
+      <rect class="node-box" id="n-request" x="10" y="70" width="120" height="52" rx="3"/>
+      <text class="node-label" x="70" y="92" text-anchor="middle">action</text>
+      <text class="node-label" x="70" y="106" text-anchor="middle">request</text>
+
+      <rect class="node-box" id="n-patterns" x="200" y="70" width="120" height="52" rx="3"/>
+      <text class="node-label" x="260" y="92" text-anchor="middle">01 patterns</text>
+      <text class="node-label" x="260" y="106" text-anchor="middle">&amp; caps</text>
+
+      <rect class="node-box" id="n-rate" x="390" y="70" width="120" height="52" rx="3"/>
+      <text class="node-label" x="450" y="92" text-anchor="middle">02 rate limit</text>
+      <text class="node-label" x="450" y="106" text-anchor="middle">&amp; domains</text>
+
+      <rect class="node-box" id="n-audit" x="580" y="70" width="120" height="52" rx="3"/>
+      <text class="node-label" x="640" y="92" text-anchor="middle">03 audit log</text>
+      <text class="node-label" x="640" y="106" text-anchor="middle">(sqlite)</text>
+
+      <!-- result box, content swapped by JS -->
+      <rect class="result-box" id="n-result" x="770" y="65" width="120" height="62" rx="3"/>
+      <text class="result-text" id="result-text" x="830" y="102" text-anchor="middle">—</text>
+
+      <!-- connecting lines -->
+      <path class="pipe-line" id="l1" d="M130,96 H200"/>
+      <path class="pipe-line" id="l2" d="M320,96 H390"/>
+      <path class="pipe-line" id="l3" d="M510,96 H580"/>
+      <path class="pipe-line" id="l4" d="M700,96 H770"/>
+
+      <circle class="token" id="token" cx="70" cy="96"/>
+    </svg>
+
+    <div class="demo-output" id="demo-output">Click a scenario above — this shows Guardrail's actual recorded output for that exact call.</div>
+  </div>
+</div>
+
+<div class="crop"><span></span><span></span></div>
+
+<section id="why">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">why this, not risk scoring</div>
+      <h2>Every decision points at a rule you can read.</h2>
+      <p>Most "AI agent security" tools compute a statistical risk score from data
+      nobody can verify at build time. Guardrail doesn't — it only makes claims
+      it can back up.</p>
+    </div>
+    <div class="compare">
+      <div class="no">
+        <h3>✕ risk-scoring tools</h3>
+        <ul>
+          <li>A number (e.g. "risk: 62") with no way to audit how it was reached</li>
+          <li>Often backed by mock or placeholder data pretending to be live</li>
+          <li>Needs paid data feeds before it means anything real</li>
+          <li>Hard to explain a false positive to the person it blocked</li>
+        </ul>
+      </div>
+      <div class="yes">
+        <h3>✓ guardrail</h3>
+        <ul>
+          <li>A rule name and a message — read it in `policies/default.yaml` yourself</li>
+          <li>Every check is a blocklist entry, regex, cap, or rate limit — nothing simulated</li>
+          <li>Works fully offline, no API keys, no data subscription</li>
+          <li>"Blocked because <this exact line> matched" — always</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="crop"><span></span><span></span></div>
+
+<section id="use">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">three ways in</div>
+      <h2>Start where your agent already is.</h2>
+    </div>
+    <div class="modules">
+      <div class="module">
+        <span class="num">01</span>
+        <h3>CLI</h3>
+        <p>Test a policy against a single action from your terminal. No server, instant feedback while you write rules.</p>
+        <span class="tag">cli.py check</span>
+      </div>
+      <div class="module">
+        <span class="num">02</span>
+        <h3>MCP server</h3>
+        <p>Drop into Claude Desktop or Claude Code's config. Advisory — works today, but a model can choose not to call it.</p>
+        <span class="tag">mcp_server.py</span>
+      </div>
+      <div class="module">
+        <span class="num">03</span>
+        <h3>enforce() decorator</h3>
+        <p>Wraps your real tool function. The model never touches the unwrapped version — a BLOCK is not optional.</p>
+        <span class="tag">guardrail.decorator</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="crop"><span></span><span></span></div>
+
+<section id="install">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">install</div>
+      <h2>Running in under a minute.</h2>
+    </div>
+    <div class="install">
+      <div class="install-head"><span></span><span></span><span></span><span class="path">terminal</span></div>
+      <pre class="code"><span class="c1"># clone &amp; install</span>
+git clone https://github.com/&lt;you&gt;/agent-guardrail
+cd agent-guardrail
+pip install -r requirements.txt
+
+<span class="c1"># try it — this will BLOCK</span>
+python3 cli.py check --agent trading-agent-001 --tool wallet.transfer \
+  --args <span class="c2">'{"amount": 9999, "to": "0xabc"}'</span></pre>
+    </div>
+  </div>
+</section>
+
+<div class="crop"><span></span><span></span></div>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:12px;">
+    <span>Guardrail — MIT licensed.</span>
+    <span><a href="../README.md">README</a> · <a href="../PUBLISHING.md">Publishing guide</a> · <a href="#demo">Demo</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const cases = {
+    safe: {
+      steps: [true, true, true],
+      result: "allow",
+      label: "ALLOW",
+      output: [
+        "agent: demo-agent (known, 4 prior decisions)",
+        "amount=2 within cap 1000 for 'wallet.transfer' (known agent)",
+        "<span class=\"rule\">decision: ALLOW</span> — no rule matched at BLOCK/WARN severity"
+      ]
+    },
+    oversized: {
+      steps: [true, true, true],
+      result: "block",
+      label: "BLOCK",
+      output: [
+        "agent: brand-new-agent (unknown, 0 prior decisions)",
+        "<span class=\"rule\">rule: numeric_cap_exceeded</span> — amount=9999.0 exceeds cap 5 for 'wallet.transfer' (unknown agent)",
+        "rule: confirmation_required — 'wallet.transfer' always requires human confirmation",
+        "<span class=\"rule\">decision: BLOCK</span>"
+      ]
+    },
+    destructive: {
+      steps: [true, true, true],
+      result: "block",
+      label: "BLOCK",
+      output: [
+        "agent: demo-agent",
+        "<span class=\"rule\">rule: pattern:destructive_shell_command</span> — argument contains a known destructive shell pattern",
+        "<span class=\"rule\">decision: BLOCK</span> — the wrapped function never executes"
+      ]
+    }
+  };
+
+  const buttons = document.querySelectorAll(".demo-btn");
+  const token = document.getElementById("token");
+  const boxes = ["n-request", "n-patterns", "n-rate", "n-audit", "n-result"].map(id => document.getElementById(id));
+  const lines = ["l1", "l2", "l3", "l4"].map(id => document.getElementById(id));
+  const resultBox = document.getElementById("n-result");
+  const resultText = document.getElementById("result-text");
+  const output = document.getElementById("demo-output");
+
+  const positions = [70, 260, 450, 640, 830];
+
+  function reset() {
+    boxes.forEach(b => b.classList.remove("lit"));
+    lines.forEach(l => l.classList.remove("lit"));
+    resultBox.classList.remove("allow", "warn", "block");
+    resultText.classList.remove("allow", "warn", "block");
+    resultText.textContent = "—";
+    token.style.opacity = 0;
+    token.setAttribute("cx", positions[0]);
+  }
+
+  function animate(caseKey) {
+    reset();
+    const data = cases[caseKey];
+    token.style.opacity = 1;
+    boxes[0].classList.add("lit");
+
+    let i = 0;
+    const step = () => {
+      if (i < lines.length) {
+        lines[i].classList.add("lit");
+        token.style.transition = "cx 0.35s ease";
+        token.setAttribute("cx", positions[i + 1]);
+        boxes[i + 1].classList.add("lit");
+        i++;
+        setTimeout(step, 380);
+      } else {
+        resultBox.classList.add(data.result);
+        resultText.classList.add(data.result);
+        resultText.textContent = data.label;
+        output.innerHTML = data.output.map(l => `<div>${l}</div>`).join("");
+      }
+    };
+    setTimeout(step, 150);
+  }
+
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      buttons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      animate(btn.dataset.case);
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

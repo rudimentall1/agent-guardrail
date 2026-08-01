@@ -1,0 +1,102 @@
+# Guardrail default policy.
+#
+# This is a real, working starting point — not a placeholder. Every rule
+# here is deterministic: if it matches, the reason is exactly the line
+# below that matched, no statistical guessing involved.
+#
+# Edit this file (or point GUARDRAIL_POLICY / --policy at your own copy)
+# to change what your agents are allowed to do. No code changes needed.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Rate limiting: sliding window, per (agent, tool). Backed by SQLite, so it
+# survives process restarts (see guardrail/storage/rate_limiter.py).
+# ---------------------------------------------------------------------------
+rate_limits:
+  default:
+    max_calls: 60
+    window_seconds: 60
+  overrides:
+    send_email:
+      max_calls: 10
+      window_seconds: 3600
+    execute_code:
+      max_calls: 20
+      window_seconds: 60
+    wallet.transfer:
+      max_calls: 5
+      window_seconds: 3600
+
+# ---------------------------------------------------------------------------
+# Tools that are never allowed, regardless of arguments.
+# ---------------------------------------------------------------------------
+blocked_tools: []
+
+# ---------------------------------------------------------------------------
+# Tools that always produce WARN (never silently ALLOW) — wire a real
+# on_warn callback (see guardrail/decorator.py) to route these to an actual
+# human-confirmation step.
+# ---------------------------------------------------------------------------
+confirmation_required_tools:
+  - wallet.transfer
+  - wallet.approve
+  - send_email
+  - delete_file
+  - execute_code
+
+# ---------------------------------------------------------------------------
+# Regex patterns checked against the JSON-serialized arguments of EVERY
+# call. These catch classic destructive/exfiltration patterns regardless
+# of which tool they show up in.
+# ---------------------------------------------------------------------------
+argument_patterns:
+  - name: destructive_shell_command
+    pattern: 'rm\s+-rf\s+/(?=\s|"|''|$)|:\(\)\{.*\};:|curl[^|\n]*\|\s*(sh|bash)|wget[^|\n]*\|\s*(sh|bash)'
+    severity: BLOCK
+    message: "Argument contains a known destructive or self-replicating shell pattern"
+
+  - name: destructive_sql
+    pattern: '(?i)\b(DROP|TRUNCATE)\s+TABLE\b'
+    severity: BLOCK
+    message: "Argument contains a destructive SQL statement (DROP/TRUNCATE TABLE)"
+
+  - name: possible_credential_exfiltration
+    pattern: '(AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|-----BEGIN (RSA|OPENSSH|EC) PRIVATE KEY-----)'
+    severity: BLOCK
+    message: "Argument appears to contain a live credential or private key"
+
+  - name: path_traversal_to_sensitive_files
+    pattern: '(\.\./)+.*(\.ssh/id_rsa|\.aws/credentials|/etc/shadow|\.env)'
+    severity: BLOCK
+    message: "Argument references a path-traversal pattern targeting a sensitive file"
+
+# ---------------------------------------------------------------------------
+# Numeric caps: look up `field` in a tool's arguments and cap it. Unknown
+# agents (fewer than `known_agent_threshold` prior decisions — see
+# GuardrailEngine) get the tighter `max_unknown_agent` limit.
+# ---------------------------------------------------------------------------
+numeric_caps:
+  wallet.transfer:
+    field: amount
+    max_unknown_agent: 5
+    max_known_agent: 1000
+  wallet.approve:
+    field: amount
+    max_unknown_agent: 0
+    max_known_agent: 1000
+
+# ---------------------------------------------------------------------------
+# Domain allow/deny checks on a specific argument field. `mode: denylist`
+# blocks listed domains; `mode: allowlist` blocks everything NOT listed
+# (an empty allowlist means "not enforced yet" rather than "deny all").
+# ---------------------------------------------------------------------------
+domain_rules:
+  http.request:
+    field: url
+    mode: denylist
+    domains: []   # populate with domains you never want an agent hitting
+  send_email:
+    field: recipient
+    mode: allowlist
+    domains: []   # populate to restrict outgoing email to known recipients

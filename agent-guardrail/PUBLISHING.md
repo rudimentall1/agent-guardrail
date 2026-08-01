@@ -20,20 +20,21 @@ The official MCP Registry and most directories expect your server to be
 independently installable, not just "clone this repo." Easiest path for a
 Python project: publish to **PyPI**.
 
+`pyproject.toml` is already set up (package name `guardrail-mcp`, console
+scripts `guardrail` and `guardrail-mcp-server`) — update the placeholder
+author name/email and repo URLs in it first, then:
+
 ```bash
 pip install build twine
 python -m build
+twine check dist/*      # sanity check before uploading
 twine upload dist/*
 ```
-
-Add a `pyproject.toml` if you don't have one yet (you don't currently —
-this repo ships as a plain script, which is fine for `git clone` use but
-blocks PyPI publishing; add one when you're ready for this step).
 
 For PyPI-based registry recognition, add this line to your `README.md`
 (can be inside an HTML comment so it doesn't show up rendered):
 ```
-mcp-name: io.github.<your-username>/guardrail
+mcp-name: io.github.rudimentall1/guardrail
 ```
 
 ## 2. Publish to the official MCP Registry

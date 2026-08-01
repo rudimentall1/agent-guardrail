@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from mcp_server import GuardrailMCPServer
+from guardrail.mcp_server import GuardrailMCPServer
 
 
 class TestMCPServer(unittest.TestCase):

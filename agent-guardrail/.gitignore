@@ -7,3 +7,6 @@ venv/
 *.db
 .env
 .DS_Store
+build/
+dist/
+*.whl

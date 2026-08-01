@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guardrail-mcp"
+version = "1.0.0"
+description = "A deterministic policy firewall for AI agent tool calls — blocks, warns, or allows based on rules you write, not a risk score."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [
+    { name = "rudimentall1" },
+]
+keywords = ["mcp", "ai-agents", "security", "guardrails", "policy-engine", "llm-tools"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "PyYAML>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rudimentall1/agent-guardrail"
+Repository = "https://github.com/rudimentall1/agent-guardrail"
+Issues = "https://github.com/rudimentall1/agent-guardrail/issues"
+Documentation = "https://github.com/rudimentall1/agent-guardrail#readme"
+
+[project.scripts]
+guardrail = "guardrail.__main__:main"
+guardrail-mcp-server = "guardrail.mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["guardrail*"]
+
+[tool.setuptools.package-data]
+guardrail = ["policies/*.yaml"]

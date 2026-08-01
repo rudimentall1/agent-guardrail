@@ -17,6 +17,16 @@ python3 cli.py check --agent trading-agent-001 --tool wallet.transfer \
   --args '{"amount": 9999, "to": "0xabc"}'
 ```
 
+Or, once published, `pip install guardrail-mcp` gives you a `guardrail`
+command directly — same output, no repo checkout required (falls back to
+the policy bundled in the package if you don't point `--policy` at your
+own file):
+
+```bash
+guardrail check --agent trading-agent-001 --tool wallet.transfer \
+  --args '{"amount": 9999, "to": "0xabc"}'
+```
+
 ```json
 {
   "decision": "BLOCK",
@@ -213,26 +223,32 @@ to, what a listing needs, and what "done" looks like.
 
 ```
 guardrail/
+    __main__.py            CLI implementation — also the `guardrail` console command
+    mcp_server.py            MCP stdio server — also the `guardrail-mcp-server` console command
     core/
-        models.py         ActionRequest, RuleMatch, GuardrailDecision (stdlib only)
-        policy.py           Policy loader (the one place PyYAML is used)
-    rules.py               Deterministic rule evaluators
+        models.py               ActionRequest, RuleMatch, GuardrailDecision (stdlib only)
+        policy.py                 Policy loader (the one place PyYAML is used)
+    rules.py                    Deterministic rule evaluators
     storage/
-        rate_limiter.py      SQLite-backed sliding-window rate limiter
-        audit.py               SQLite-backed persistent audit log
-    engine.py               GuardrailEngine — orchestrates rules + rate limit + audit
-    decorator.py            enforce() — the unbypassable integration point
+        rate_limiter.py           SQLite-backed sliding-window rate limiter
+        audit.py                    SQLite-backed persistent audit log
+    engine.py                    GuardrailEngine — orchestrates rules + rate limit + audit
+    decorator.py                 enforce() — the unbypassable integration point
     confirmation/
-        web_ui.py             Local web UI for human approve/reject (stdlib http.server)
-        cli_ui.py               Terminal-prompt confirmation
-policies/
-    default.yaml            Real, working default policy
-mcp_server.py               Hand-rolled MCP stdio server (no external mcp SDK needed)
-cli.py                      Manual check / history CLI
+        web_ui.py                    Local web UI for human approve/reject (stdlib http.server)
+        cli_ui.py                      Terminal-prompt confirmation
+    policies/default.yaml           Copy of the default policy bundled into the installed package
+policies/default.yaml       Canonical, editable default policy (git-clone workflow)
+cli.py                      Thin shim -> guardrail/__main__.py (for `python3 cli.py`)
+mcp_server.py                Thin shim -> guardrail/mcp_server.py (for `python3 mcp_server.py`)
+pyproject.toml               Package metadata — `pip install .` gives you `guardrail` + `guardrail-mcp-server`
+.github/workflows/ci.yml      Runs the test suite + policy validation + package build on every push
 examples/
-    example_agent_usage.py     Decorator basics
-    example_web_confirmation.py  Real browser-based approve/reject, live
-tests/                      46 unit tests, all runnable with just PyYAML installed
-PUBLISHING.md                How to actually get this in front of people
-landing/index.html            Static one-page site (open directly or host on GitHub Pages)
+    example_agent_usage.py       Decorator basics
+    example_web_confirmation.py    Real browser-based approve/reject, live
+tests/                       46 unit tests, all runnable with just PyYAML installed
+CONTRIBUTING.md              How to add a rule type, ground rules
+CHANGELOG.md                  Version history
+PUBLISHING.md                 How to actually get this in front of people
+landing/index.html             Static one-page site (open directly or host on GitHub Pages)
 ```

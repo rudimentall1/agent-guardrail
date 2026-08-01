@@ -117,5 +117,21 @@ class Policy:
             data = yaml.safe_load(f)
         return cls.from_dict(data or {})
 
+    @classmethod
+    def default(cls) -> "Policy":
+        """Load the copy of policies/default.yaml bundled inside the
+        installed package. Used as a fallback when running as an
+        installed console script (pip install) from a directory that has
+        no local `policies/default.yaml` of its own — see
+        guardrail/__main__.py and guardrail/mcp_server.py.
+        """
+        import yaml
+        from importlib.resources import files
+
+        resource = files("guardrail").joinpath("policies", "default.yaml")
+        with resource.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return cls.from_dict(data or {})
+
     def rate_limit_for(self, tool_name: str) -> RateLimit:
         return self.rate_limit_overrides.get(tool_name, self.default_rate_limit)

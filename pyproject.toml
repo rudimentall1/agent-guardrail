@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "guardrail-mcp"
-version = "1.0.0"
+version = "1.0.2"
 description = "A deterministic policy firewall for AI agent tool calls — blocks, warns, or allows based on rules you write, not a risk score."
 readme = "README.md"
 license = { file = "LICENSE" }

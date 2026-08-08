@@ -220,6 +220,24 @@ to, what a listing needs, and what "done" looks like.
 
 ---
 
+## Related projects
+
+Same author, same principle applied elsewhere:
+
+- [agentic-wallet-guardian-v3](https://github.com/rudimentall1/agentic-wallet-guardian-v3) -
+  a security decision layer for AI agents transacting on-chain. MIT,
+  101 tests.
+- [x402-attest](https://github.com/rudimentall1/x402-attest) -
+  cryptographically signed (Ed25519), independently verifiable
+  attestations for agent-to-agent payment policy decisions. Early
+  proof of concept.
+- [open-agent-attestation](https://github.com/rudimentall1/open-agent-attestation) -
+  vendor-neutral open spec (JWT+EdDSA) for signing agent policy
+  decisions, verifiable by anyone. x402-attest above uses a custom
+  format; this is the generalized version. Draft v0.1.
+
+---
+
 ## Project layout
 
 ```

@@ -1,0 +1,16 @@
+{
+  "name": "agent-guardrail",
+  "description": "Deterministic policy firewall for AI agents. Evaluates tool calls before execution and returns ALLOW, WARN, or BLOCK decisions using explicit policies, audit trails, and rate limits.",
+  "repository": "https://github.com/rudimentall1/agent-guardrail",
+  "runtime": "python",
+  "entrypoint": "guardrail-mcp-server",
+  "license": "MIT",
+  "tags": [
+    "mcp",
+    "ai-agents",
+    "security",
+    "guardrails",
+    "policy-engine",
+    "llm-tools"
+  ]
+}

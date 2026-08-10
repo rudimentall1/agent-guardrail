@@ -1,5 +1,6 @@
 # Guardrail
 <!-- mcp-name: io.github.rudimentall1/agent-guardrail -->
+[![agent-guardrail MCP server](https://glama.ai/mcp/servers/rudimentall1/agent-guardrail/badges/card.svg)](https://glama.ai/mcp/servers/rudimentall1/agent-guardrail)
 
 **A policy firewall for AI agent tool calls.**
 

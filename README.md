@@ -19,7 +19,7 @@ python3 cli.py check --agent trading-agent-001 --tool wallet.transfer \
   --args '{"amount": 9999, "to": "0xabc"}'
 ```
 
-Or, once published, `pip install guardrail-mcp` gives you a `guardrail`
+Or `pip install guardrail-mcp` gives you a `guardrail`
 command directly — same output, no repo checkout required (falls back to
 the policy bundled in the package if you don't point `--policy` at your
 own file):
@@ -227,7 +227,7 @@ Same author, same principle applied elsewhere:
 
 - [agentic-wallet-guardian-v3](https://github.com/rudimentall1/agentic-wallet-guardian-v3) -
   a security decision layer for AI agents transacting on-chain. MIT,
-  101 tests.
+  112 tests.
 - [x402-attest](https://github.com/rudimentall1/x402-attest) -
   cryptographically signed (Ed25519), independently verifiable
   attestations for agent-to-agent payment policy decisions. Early

@@ -2,6 +2,8 @@
 <!-- mcp-name: io.github.rudimentall1/agent-guardrail -->
 [![agent-guardrail MCP server](https://glama.ai/mcp/servers/rudimentall1/agent-guardrail/badges/card.svg)](https://glama.ai/mcp/servers/rudimentall1/agent-guardrail)
 
+📄 [Read the white paper](docs/whitepaper.pdf)
+
 **A policy firewall for AI agent tool calls.**
 
 Your agent wants to run a shell command, send an email, or move money.

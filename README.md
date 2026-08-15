@@ -196,10 +196,17 @@ just synthetic test policies — actually catches what it claims to.
   multiple replicas sharing rate limits/audit history, point every
   process at the same file on shared storage, or swap in a real database
   (the storage classes are small and easy to re-target).
-- **No built-in secrets/PII redaction in the audit log.** Arguments are
-  stored as-submitted. If your tools take sensitive arguments, redact
-  before calling `evaluate()`, or extend `AuditLog` to redact specific
-  fields before persisting.
+- **Secrets/PII redaction in the audit log is on by default.**
+  `AuditLog` redacts values whose key looks sensitive (`password`,
+  `api_key`, `authorization`, ...) and a couple of high-confidence value
+  shapes (PEM private key blocks, JWT-shaped strings) regardless of key
+  name, recursing into nested dicts/lists - see
+  `guardrail/storage/redaction.py` for exactly what is and isn't caught,
+  and why general-purpose entropy heuristics were deliberately left out
+  (too many false positives on ordinary UUIDs/hashes). Pass
+  `AuditLog(redact=False)` to store arguments as-submitted, or
+  `extra_sensitive_keys={...}` to redact additional field names specific
+  to your tools.
 - **The default policy is a reasonable starting point, not a complete
   threat model.** It catches well-known destructive shell/SQL patterns
   and obvious credential formats — extend `argument_patterns` for

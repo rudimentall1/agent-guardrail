@@ -11,13 +11,26 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, FrozenSet, List, Optional
 
 from guardrail.core.models import ActionRequest, GuardrailDecision
+from guardrail.storage.redaction import redact_arguments
 
 
 class AuditLog:
-    def __init__(self, db_path: str = "guardrail_audit.db"):
+    def __init__(
+        self,
+        db_path: str = "guardrail_audit.db",
+        redact: bool = True,
+        extra_sensitive_keys: Optional[FrozenSet[str]] = None,
+    ):
+        # Redaction defaults ON: this log's whole purpose is faithfully
+        # persisting what agents attempted, in a queryable file that
+        # tends to outlive any one debugging session - the safer default
+        # is to redact likely secrets, not to store everything raw and
+        # hope every caller remembers to opt in. See redaction.py.
+        self.redact = redact
+        self.extra_sensitive_keys = extra_sensitive_keys or frozenset()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute(
             """
@@ -38,6 +51,9 @@ class AuditLog:
         self._conn.commit()
 
     def record_decision(self, request: ActionRequest, decision: GuardrailDecision) -> None:
+        arguments = request.arguments
+        if self.redact:
+            arguments = redact_arguments(arguments, self.extra_sensitive_keys)
         self._conn.execute(
             """
             INSERT OR REPLACE INTO decisions
@@ -48,7 +64,7 @@ class AuditLog:
                 decision.request_id,
                 decision.agent_id,
                 decision.tool_name,
-                json.dumps(request.arguments, default=str),
+                json.dumps(arguments, default=str),
                 decision.decision.value,
                 json.dumps([m.rule for m in decision.matched_rules]),
                 json.dumps(decision.explanation),

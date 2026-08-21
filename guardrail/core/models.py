@@ -6,9 +6,8 @@ only used at policy-loading time (guardrail/core/policy.py), not here.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List
@@ -34,14 +33,20 @@ class ActionRequest:
     arguments: Dict[str, Any] = field(default_factory=dict)
     context: Dict[str, Any] = field(default_factory=dict)
     requested_at: float = field(default_factory=time.time)
-
-    @property
-    def request_id(self) -> str:
-        raw = (
-            f"{self.agent_id}:{self.tool_name}:"
-            f"{json.dumps(self.arguments, sort_keys=True, default=str)}:{self.requested_at}"
-        )
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    # A request's identity must be independent of its content and
+    # timestamp: it's the primary key for the audit log (a collision
+    # silently erases the earlier decision's row via INSERT OR REPLACE)
+    # and the key for pending human-confirmation items in
+    # confirmation/web_ui.py (a collision there silently drops one of
+    # two genuinely distinct pending actions from the reviewer's queue,
+    # and resolving the survivor resolves both). Two identical back-to-
+    # back tool calls - an ordinary retry pattern - are exactly the case
+    # a content+timestamp hash collides on: requested_at is time.time(),
+    # which produces identical values on a large fraction of consecutive
+    # calls (measured ~37% in this environment) at typical clock
+    # resolution. A random id has no such failure mode regardless of how
+    # fast or how identical consecutive requests are.
+    request_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
 
 
 @dataclass

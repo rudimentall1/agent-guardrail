@@ -55,6 +55,18 @@ class RateLimiter:
             "INSERT INTO calls (agent_id, tool_name, called_at) VALUES (?, ?, ?)",
             (agent_id, tool_name, now),
         )
+        # Without this, `calls` grows by one row on every single call,
+        # forever - the WHERE clause above only filters what counts
+        # toward the current window, it never removes anything. Piggy-
+        # backing the cleanup on the same round trip, scoped to this
+        # (agent_id, tool_name) pair, bounds row growth for exactly the
+        # case that matters: a key called repeatedly. A key that goes
+        # silent leaves a small bounded residual (its last window's
+        # worth of rows) until it's called again, which then cleans it.
+        self._conn.execute(
+            "DELETE FROM calls WHERE agent_id=? AND tool_name=? AND called_at<?",
+            (agent_id, tool_name, window_start),
+        )
         self._conn.commit()
 
         return RateLimitResult(

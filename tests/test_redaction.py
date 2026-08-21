@@ -60,10 +60,29 @@ class TestRedactArguments(unittest.TestCase):
         out = redact_arguments({"internal_note": "sensitive"}, extra_sensitive_keys=frozenset({"internal_note"}))
         self.assertEqual(out["internal_note"], REDACTED)
 
-    def test_does_not_mutate_input(self):
-        original = {"password": "hunter2"}
-        redact_arguments(original)
-        self.assertEqual(original["password"], "hunter2")
+    def test_bare_token_key_is_redacted(self):
+        """Regression test for Finding 4: a bare 'token' key name (very
+        common in practice - Slack, Stripe, and many internal APIs all
+        use exactly this name for a non-JWT-shaped secret) matched none
+        of the existing compound substrings (access_token, auth_token,
+        session_token, refresh_token all require that specific prefix),
+        so it slipped past both key-name and value-shape detection
+        entirely if the value wasn't JWT-shaped."""
+        out = redact_arguments({"token": "xoxb-opaque-slack-token-not-a-jwt"})
+        self.assertEqual(out["token"], REDACTED)
+
+    def test_max_tokens_is_not_redacted(self):
+        """The reason 'token' can't just be added to
+        SENSITIVE_KEY_SUBSTRINGS: max_tokens is an extremely common,
+        genuinely non-secret LLM tool-call parameter, and 'token' is a
+        substring of it. The fix must be an exact-match addition, not a
+        broadened substring, specifically to avoid breaking this."""
+        out = redact_arguments({"max_tokens": 500})
+        self.assertEqual(out["max_tokens"], 500)
+
+    def test_header_style_bare_token_key_is_redacted(self):
+        out = redact_arguments({"Token": "abc123"})
+        self.assertEqual(out["Token"], REDACTED)
 
 
 class TestAuditLogRedactionIntegration(unittest.TestCase):

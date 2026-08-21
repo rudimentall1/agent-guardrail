@@ -54,11 +54,25 @@ _PEM_BLOCK_RE = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
 _JWT_SHAPE_RE = re.compile(r"^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 
 
+# Exact-match only (not substring, unlike SENSITIVE_KEY_SUBSTRINGS above)
+# - these are common bare key names for a secret, but are also
+# substrings of extremely common NON-secret parameter names, so they
+# can't be added to the substring list without over-redacting. "token"
+# is the case that matters most in practice: a plain OAuth/API token
+# argument is very often just named "token" (Slack, Stripe, and many
+# internal APIs all do this), but "token" is also a substring of
+# max_tokens - one of the single most common LLM tool-call parameters
+# in the whole agent-tooling ecosystem, and definitely not a secret.
+EXACT_SENSITIVE_KEYS = frozenset({"token"})
+
+
 def _key_looks_sensitive(key: str) -> bool:
     # Header-style keys use hyphens ("X-Api-Key"); normalize to underscores
     # so SENSITIVE_KEY_SUBSTRINGS doesn't need every separator variant
     # spelled out twice.
     normalized = key.lower().replace("-", "_")
+    if normalized in EXACT_SENSITIVE_KEYS:
+        return True
     return any(pattern in normalized for pattern in SENSITIVE_KEY_SUBSTRINGS)
 
 

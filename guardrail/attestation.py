@@ -32,6 +32,7 @@ def decision_to_oaa_token(
     *,
     issuer: str,
     private_key_pem: bytes,
+    ttl_seconds: int | None = None,
 ) -> str:
     """Sign a GuardrailDecision as an OAA token.
 
@@ -39,8 +40,14 @@ def decision_to_oaa_token(
     instance, or the GitHub repo if you haven't deployed one).
     `private_key_pem` - generate once with oaa.generate_keypair() and
     keep it; the public half is what you publish so others can verify.
+    `ttl_seconds` - forwarded to oaa.issue(); defaults to that
+    function's own default (15 minutes) if not given here.
     """
     reason = "; ".join(m.message for m in decision.matched_rules) or "no rules matched"
+
+    kwargs = {}
+    if ttl_seconds is not None:
+        kwargs["ttl_seconds"] = ttl_seconds
 
     return issue(
         issuer=issuer,
@@ -50,4 +57,5 @@ def decision_to_oaa_token(
         reason=reason,
         policy_ref=_policy_fingerprint(policy),
         private_key_pem=private_key_pem,
+        **kwargs,
     )

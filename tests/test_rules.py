@@ -62,6 +62,30 @@ class TestRules(unittest.TestCase):
         matches = check_numeric_caps(req, SAMPLE_POLICY, is_known_agent=True)
         self.assertEqual(matches, [])
 
+    def test_numeric_cap_nan_does_not_silently_bypass(self):
+        """Regression test for Finding 2: float('nan') > limit and
+        float('nan') < limit are both False in Python, so a plain
+        comparison silently let a NaN amount through every cap
+        untouched - confirmed reachable in practice, since
+        mcp_server.py's json.loads() accepts a bare NaN literal in the
+        incoming MCP message by default."""
+        req = ActionRequest(agent_id="a", tool_name="wallet.transfer", arguments={"amount": float("nan")})
+        matches = check_numeric_caps(req, SAMPLE_POLICY, is_known_agent=False)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].rule, "numeric_cap_invalid")
+
+    def test_numeric_cap_positive_infinity_rejected(self):
+        req = ActionRequest(agent_id="a", tool_name="wallet.transfer", arguments={"amount": float("inf")})
+        matches = check_numeric_caps(req, SAMPLE_POLICY, is_known_agent=False)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].rule, "numeric_cap_invalid")
+
+    def test_numeric_cap_negative_infinity_rejected(self):
+        req = ActionRequest(agent_id="a", tool_name="wallet.transfer", arguments={"amount": float("-inf")})
+        matches = check_numeric_caps(req, SAMPLE_POLICY, is_known_agent=False)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].rule, "numeric_cap_invalid")
+
     def test_domain_denylist_blocks_listed_domain(self):
         req = ActionRequest(agent_id="a", tool_name="http.request", arguments={"url": "https://evil.example/x"})
         matches = check_domain_rules(req, SAMPLE_POLICY)

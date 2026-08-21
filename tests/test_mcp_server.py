@@ -50,6 +50,29 @@ class TestMCPServer(unittest.TestCase):
         })
         self.assertIn("error", response)
 
+    def test_nan_in_raw_stdin_message_does_not_bypass_numeric_cap(self):
+        """End-to-end regression test for Finding 2: main()'s stdin loop
+        parses each line with `json.loads(line)` - the exact call used
+        here - which accepts a bare NaN literal by default (a non-
+        standard but enabled-by-default extension of Python's json
+        module). This reproduces the real exploit path: raw JSON text
+        with a NaN literal, parsed the same way the actual server does,
+        flowing through the full tools/call pipeline against a tool that
+        has a numeric cap in the real default policy (wallet.transfer)."""
+        raw_line = (
+            '{"jsonrpc": "2.0", "id": 6, "method": "tools/call", '
+            '"params": {"name": "guardrail_check", "arguments": '
+            '{"agent_id": "test-agent", "tool_name": "wallet.transfer", '
+            '"arguments": {"amount": NaN}}}}'
+        )
+        message = json.loads(raw_line)  # same call main()'s stdin loop makes
+        response = self.server.handle(message)
+        payload = json.loads(response["result"]["content"][0]["text"])
+        self.assertNotEqual(payload["decision"], "ALLOW",
+                             msg=f"NaN amount was not caught - got: {payload}")
+        rule_names = {m["rule"] for m in payload["matched_rules"]}
+        self.assertIn("numeric_cap_invalid", rule_names)
+
     def test_unknown_method_returns_error(self):
         response = self.server.handle({"jsonrpc": "2.0", "id": 5, "method": "nonexistent/method"})
         self.assertIn("error", response)

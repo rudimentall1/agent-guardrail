@@ -9,6 +9,7 @@ predictable, auditable, boring in the best sense.
 from __future__ import annotations
 
 import json
+import math
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -59,6 +60,21 @@ def check_numeric_caps(request: ActionRequest, policy: Policy, is_known_agent: b
         return [RuleMatch(
             rule="numeric_cap_invalid", severity=Severity.WARN,
             message=f"Field '{cap.field}' on '{request.tool_name}' is not numeric",
+        )]
+
+    if math.isnan(value) or math.isinf(value):
+        # float('nan') > limit and float('nan') < limit are both False in
+        # Python - a plain comparison silently lets a NaN value through
+        # every cap untouched. Confirmed this is reachable in practice:
+        # mcp_server.py's json.loads() accepts a bare `NaN` literal in the
+        # incoming MCP message by default (a non-standard but enabled-by-
+        # default extension of Python's json module), so this isn't a
+        # theoretical concern - a malformed or malicious tool-call
+        # argument reaches this exact comparison. (Infinity IS correctly
+        # caught by `value > limit` below; NaN specifically is not.)
+        return [RuleMatch(
+            rule="numeric_cap_invalid", severity=Severity.WARN,
+            message=f"Field '{cap.field}' on '{request.tool_name}' must be a finite number (got NaN or Infinity)",
         )]
 
     limit = cap.max_known_agent if is_known_agent else cap.max_unknown_agent

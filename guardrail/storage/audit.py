@@ -81,7 +81,18 @@ class AuditLog:
         self._conn.commit()
         return cur.rowcount > 0
 
+    MAX_HISTORY_LIMIT = 500
+
     def history_for_agent(self, agent_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        # Clamp here, the one place every caller (CLI, MCP server, and
+        # any future caller) goes through - without this, a
+        # caller-supplied limit flowed straight into a raw SQL `LIMIT
+        # ?` with no bound. SQLite treats a negative LIMIT as "no limit
+        # at all" (confirmed: LIMIT -1 returns every row), so this
+        # wasn't just "a very large number is slow" - a single
+        # limit=-1 call returned an agent's entire audit history
+        # unbounded in one response.
+        limit = max(1, min(limit, self.MAX_HISTORY_LIMIT))
         cur = self._conn.execute(
             "SELECT request_id, tool_name, decision, created_at, outcome FROM decisions "
             "WHERE agent_id=? ORDER BY created_at DESC LIMIT ?",

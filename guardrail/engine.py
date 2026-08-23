@@ -43,7 +43,23 @@ class GuardrailEngine:
 
     def _is_known_agent(self, agent_id: str) -> bool:
         counts = self.audit_log.counts_for_agent(agent_id)
-        return sum(counts.values()) >= self.known_agent_threshold
+        # Only ALLOW decisions count toward "known" status. This used to
+        # be sum(counts.values()) - every decision, BLOCK included. That
+        # made "known" status free to earn: an agent (or an attacker
+        # controlling one) could call any tool in policy.blocked_tools,
+        # or trigger any other guaranteed BLOCK, `known_agent_threshold`
+        # times - at zero cost and zero real trust established, since a
+        # blocked action never executes - and unlock the *much* higher
+        # `max_known_agent` numeric cap on its very next (real,
+        # unblocked) call. The bundled default policy makes this
+        # concrete: wallet.transfer's cap jumps from max_unknown_agent=5
+        # to max_known_agent=1000, a 200x increase, reachable for free
+        # in 3 calls that all fail on purpose. Counting only ALLOWs means
+        # "known" now has to be earned through actions that actually went
+        # through - the WARN case is deliberately excluded too: a WARN is
+        # exactly the tool identifying something worth a second look, not
+        # a track record of clean, unremarkable use.
+        return counts.get("ALLOW", 0) >= self.known_agent_threshold
 
     def evaluate(self, request: ActionRequest) -> GuardrailDecision:
         is_known = self._is_known_agent(request.agent_id)

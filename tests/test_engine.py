@@ -64,6 +64,41 @@ class TestGuardrailEngine(unittest.TestCase):
                                                    arguments={"amount": 50}))
         self.assertEqual(decision.decision, Decision.ALLOW)
 
+    def test_blocked_calls_do_not_earn_known_agent_status(self):
+        # Regression test: "known" status used to be earned by
+        # sum(counts.values()) - every recorded decision, BLOCK included.
+        # That made it free: calling a guaranteed-BLOCK tool
+        # `known_agent_threshold` times cost nothing (a blocked action
+        # never executes) and unlocked the much higher
+        # max_known_agent numeric cap on the very next real call. Only
+        # ALLOW should build that status now.
+        engine = new_engine(known_agent_threshold=3)
+        attacker = "farms-block-status"
+        for _ in range(3):
+            decision = engine.evaluate(ActionRequest(agent_id=attacker, tool_name="nuke_everything"))
+            self.assertEqual(decision.decision, Decision.BLOCK)
+
+        # Same numeric cap boundary as test_unknown_agent_hits_tighter_
+        # numeric_cap - if "known" status had been earned for free above,
+        # this would incorrectly ALLOW at the max_known_agent=1000 cap.
+        decision = engine.evaluate(ActionRequest(agent_id=attacker, tool_name="wallet.transfer",
+                                                   arguments={"amount": 50}))
+        self.assertEqual(decision.decision, Decision.BLOCK)
+
+    def test_warn_only_history_does_not_earn_known_agent_status(self):
+        # WARN is the tool flagging something worth a second look, not a
+        # track record of clean use - it must not count toward "known"
+        # any more than BLOCK does.
+        engine = new_engine(known_agent_threshold=3)
+        agent = "warn-only-history"
+        for _ in range(3):
+            decision = engine.evaluate(ActionRequest(agent_id=agent, tool_name="send_email", arguments={}))
+            self.assertEqual(decision.decision, Decision.WARN)
+
+        decision = engine.evaluate(ActionRequest(agent_id=agent, tool_name="wallet.transfer",
+                                                   arguments={"amount": 50}))
+        self.assertEqual(decision.decision, Decision.BLOCK)
+
     def test_rate_limit_blocks_after_threshold(self):
         engine = new_engine()
         agent = "spammer"

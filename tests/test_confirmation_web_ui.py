@@ -33,6 +33,29 @@ def _post(url: str, payload: dict):
 
 
 class TestConfirmationServer(unittest.TestCase):
+    def test_warns_when_binding_to_a_non_localhost_host(self):
+        # Regression test: /api/respond has no authentication of any
+        # kind, so binding anywhere other than localhost silently exposed
+        # approve/reject of pending actions to anyone who could reach
+        # that address - now logged loudly instead.
+        with self.assertLogs("guardrail.confirmation", level="WARNING") as ctx:
+            ConfirmationServer(host="0.0.0.0", port=0)
+        self.assertTrue(any("no authentication" in m for m in ctx.output))
+
+    def test_no_warning_for_localhost_variants(self):
+        import logging
+        logger = logging.getLogger("guardrail.confirmation")
+        handler = logging.Handler()
+        records = []
+        handler.emit = records.append
+        logger.addHandler(handler)
+        try:
+            for host in ("127.0.0.1", "localhost", "::1"):
+                ConfirmationServer(host=host, port=0)
+            self.assertEqual(records, [])
+        finally:
+            logger.removeHandler(handler)
+
     def setUp(self):
         self.server = ConfirmationServer(port=0, timeout_seconds=5)
         # port=0 asks the OS for a free port; read back the real one.

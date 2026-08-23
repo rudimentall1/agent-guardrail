@@ -108,6 +108,34 @@ class TestRules(unittest.TestCase):
         matches = check_domain_rules(req, SAMPLE_POLICY)
         self.assertEqual(matches, [])
 
+    def test_domain_denylist_catches_trailing_dot_bypass_via_url(self):
+        # Regression test: "evil.example." (a fully-qualified DNS name -
+        # every resolver treats it identically to "evil.example") used to
+        # slip past the denylist entirely, because urlparse().hostname
+        # preserves the trailing dot verbatim and the policy's denylist
+        # entry never has one.
+        req = ActionRequest(agent_id="a", tool_name="http.request",
+                             arguments={"url": "https://evil.example./x"})
+        matches = check_domain_rules(req, SAMPLE_POLICY)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].rule, "domain_denied")
+
+    def test_domain_denylist_catches_trailing_dot_bypass_case_insensitive(self):
+        req = ActionRequest(agent_id="a", tool_name="http.request",
+                             arguments={"url": "https://EVIL.EXAMPLE./x"})
+        matches = check_domain_rules(req, SAMPLE_POLICY)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].rule, "domain_denied")
+
+    def test_domain_allowlist_catches_trailing_dot_bypass_via_email(self):
+        # Same bypass, allowlist mode, email form: "x@trusted.example."
+        # must still count as the allow-listed "trusted.example", not as
+        # some other, unlisted domain.
+        req = ActionRequest(agent_id="a", tool_name="send_email",
+                             arguments={"recipient": "x@trusted.example."})
+        matches = check_domain_rules(req, SAMPLE_POLICY)
+        self.assertEqual(matches, [])
+
 
 if __name__ == "__main__":
     unittest.main()

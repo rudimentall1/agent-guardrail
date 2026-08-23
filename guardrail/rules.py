@@ -92,9 +92,25 @@ def check_numeric_caps(request: ActionRequest, policy: Policy, is_known_agent: b
 def _extract_domain(value: str) -> Optional[str]:
     value = value.strip()
     if "@" in value and "://" not in value:
-        return value.split("@")[-1].lower() or None
-    parsed = urlparse(value if "://" in value else f"//{value}")
-    return parsed.hostname.lower() if parsed.hostname else None
+        domain = value.split("@")[-1].lower() or None
+    else:
+        parsed = urlparse(value if "://" in value else f"//{value}")
+        domain = parsed.hostname.lower() if parsed.hostname else None
+
+    if domain is None:
+        return None
+    # A trailing dot makes a domain name "fully qualified" in DNS terms -
+    # "evil.com." resolves to the exact same host as "evil.com", every
+    # resolver treats them identically. urlparse()'s hostname parsing
+    # (and the plain email-split path above) both preserve that trailing
+    # dot verbatim, but policy YAML domain lists are never written with
+    # one - so "evil.com." silently missed an exact `in rule.domains`
+    # match against a denylist entry of "evil.com", while still routing
+    # to the identical blocked destination at the network layer. This is
+    # a real, freely available bypass: any caller wanting to evade a
+    # domain rule just needs to add one trailing dot to the value they
+    # send.
+    return domain.rstrip(".") or None
 
 
 def check_domain_rules(request: ActionRequest, policy: Policy) -> List[RuleMatch]:

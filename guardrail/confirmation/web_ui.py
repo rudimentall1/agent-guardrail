@@ -21,6 +21,7 @@ time" should mean something else, wrap `request_confirmation` yourself.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import webbrowser
 from dataclasses import dataclass, field
@@ -28,6 +29,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, Optional
 
 from guardrail.core.models import GuardrailDecision
+
+logger = logging.getLogger("guardrail.confirmation")
+
+_LOCALHOST_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 PAGE_TEMPLATE = """<!doctype html>
 <html>
@@ -126,6 +131,25 @@ class ConfirmationServer:
         self._lock = threading.Lock()
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+
+        if host not in _LOCALHOST_HOSTS:
+            # /api/respond has no authentication of any kind - it trusts
+            # whoever can reach it to approve or reject a pending WARN
+            # action, on the assumption that only the operator at this
+            # machine's keyboard can reach it (the default,
+            # 127.0.0.1, only accepts local connections). Binding to
+            # anything else - 0.0.0.0, a LAN IP, a public interface -
+            # means anyone who can reach that address on the network can
+            # approve or reject pending actions with no credentials at
+            # all. This is still allowed (some deployments genuinely
+            # need it, e.g. reaching the UI from another device on a
+            # trusted LAN) - just not silently.
+            logger.warning(
+                "ConfirmationServer is binding to %s, not localhost. "
+                "/api/respond has no authentication - anyone who can reach "
+                "this host and port can approve or reject pending actions.",
+                host,
+            )
 
     def start(self, open_browser: bool = False) -> None:
         handler_cls = self._make_handler()

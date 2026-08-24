@@ -14,7 +14,7 @@ from typing import List, Optional
 from urllib.parse import urlparse
 
 from guardrail.core.models import ActionRequest, RuleMatch, Severity
-from guardrail.core.policy import Policy
+from guardrail.core.policy import AggregateCapRule, Policy
 
 
 def check_blocked_tools(request: ActionRequest, policy: Policy) -> List[RuleMatch]:
@@ -87,6 +87,65 @@ def check_numeric_caps(request: ActionRequest, policy: Policy, is_known_agent: b
             ),
         )]
     return []
+
+
+def find_aggregate_contributions(
+    request: ActionRequest, policy: Policy,
+) -> tuple[List[RuleMatch], List[tuple[str, float, AggregateCapRule]]]:
+    """Resolves which ``aggregate_caps`` groups (see ``core/policy.py``)
+    this request contributes to, and how much.
+
+    Unlike ``check_numeric_caps``, this doesn't decide ALLOW/BLOCK on its
+    own — it can't, since a group's running total is stateful (tracked in
+    ``storage/aggregate_spend.py``) and shared across every tool in the
+    group, not something this pure function has access to. It resolves
+    the *candidate contributions* (which groups, how much each); the
+    caller (``GuardrailEngine.evaluate()``) checks each one against its
+    tracker and decides.
+
+    Same validation conventions as ``check_numeric_caps``, for
+    consistency: a tool listed in a group but missing that field on this
+    particular request contributes nothing (silently, no WARN - matches
+    check_numeric_caps' existing behavior for a missing field). A field
+    that's present but not a finite number produces a WARN and is
+    excluded from its group's contribution (better to undercount than to
+    silently treat unparseable input as 0 and let it slip past a cap
+    meant to catch exactly this kind of value).
+    """
+    warnings: List[RuleMatch] = []
+    contributions: List[tuple[str, float, AggregateCapRule]] = []
+
+    for group_name, cap in policy.aggregate_caps.items():
+        field = cap.tools.get(request.tool_name)
+        if field is None:
+            continue  # this tool isn't part of this aggregate group
+
+        value = request.arguments.get(field)
+        if value is None:
+            continue
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            warnings.append(RuleMatch(
+                rule="aggregate_cap_invalid", severity=Severity.WARN,
+                message=f"Field '{field}' on '{request.tool_name}' is not numeric (aggregate group '{group_name}')",
+            ))
+            continue
+
+        if math.isnan(value) or math.isinf(value):
+            warnings.append(RuleMatch(
+                rule="aggregate_cap_invalid", severity=Severity.WARN,
+                message=(
+                    f"Field '{field}' on '{request.tool_name}' must be a finite number "
+                    f"(got NaN or Infinity; aggregate group '{group_name}')"
+                ),
+            ))
+            continue
+
+        contributions.append((group_name, value, cap))
+
+    return warnings, contributions
 
 
 def _extract_domain(value: str) -> Optional[str]:

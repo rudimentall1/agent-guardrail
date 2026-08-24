@@ -36,6 +36,21 @@ class NumericCapRule:
 
 
 @dataclass
+class AggregateCapRule:
+    """A spending/quantity cap shared across several tools, tracked as one
+    running total per (agent, group) rather than per tool - e.g. "all
+    money-moving tools combined, per agent, per day" instead of each tool
+    having its own independent, isolated cap. See rules.py's
+    find_aggregate_contributions() and storage/aggregate_spend.py.
+    """
+    name: str
+    tools: Dict[str, str]  # tool_name -> name of the argument field to sum for that tool
+    window_seconds: int
+    max_unknown_agent: Optional[float]
+    max_known_agent: Optional[float]
+
+
+@dataclass
 class DomainRule:
     tool: str
     field: str
@@ -55,6 +70,7 @@ class Policy:
     confirmation_required_tools: List[str] = field(default_factory=list)
     argument_patterns: List[PatternRule] = field(default_factory=list)
     numeric_caps: Dict[str, NumericCapRule] = field(default_factory=dict)
+    aggregate_caps: Dict[str, AggregateCapRule] = field(default_factory=dict)
     domain_rules: Dict[str, DomainRule] = field(default_factory=dict)
     default_rate_limit: RateLimit = field(default_factory=lambda: RateLimit(60, 60))
     rate_limit_overrides: Dict[str, RateLimit] = field(default_factory=dict)
@@ -81,6 +97,17 @@ class Policy:
             for tool, spec in (data.get("numeric_caps") or {}).items()
         }
 
+        aggregate_caps = {
+            name: AggregateCapRule(
+                name=name,
+                tools=dict(spec["tools"]),
+                window_seconds=spec["window_seconds"],
+                max_unknown_agent=spec.get("max_unknown_agent"),
+                max_known_agent=spec.get("max_known_agent"),
+            )
+            for name, spec in (data.get("aggregate_caps") or {}).items()
+        }
+
         domain_rules = {
             tool: DomainRule(
                 tool=tool,
@@ -104,6 +131,7 @@ class Policy:
             confirmation_required_tools=list(data.get("confirmation_required_tools") or []),
             argument_patterns=argument_patterns,
             numeric_caps=numeric_caps,
+            aggregate_caps=aggregate_caps,
             domain_rules=domain_rules,
             default_rate_limit=default_rate_limit,
             rate_limit_overrides=rate_limit_overrides,

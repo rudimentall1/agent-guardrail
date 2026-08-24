@@ -167,8 +167,40 @@ checks, numeric caps, domain rules, rate limits, all commented).
 | `confirmation_required_tools` | Tool names that always produce `WARN` |
 | `argument_patterns` | Regex against the JSON-serialized call arguments — destructive shell commands, SQL, leaked credentials, path traversal, SSRF, force-pushes, regardless of which tool carries them |
 | `numeric_caps` | Per-tool numeric field caps, tighter for agents with no history |
+| `aggregate_caps` | A cap shared across *several* tools, tracked as one running total per agent — see below |
 | `domain_rules` | Allow/deny lists on a URL or email-recipient field, per tool |
 | `rate_limits` | Sliding-window call limits per (agent, tool), backed by SQLite |
+
+`numeric_caps` limits each tool independently — `wallet.transfer` capped
+at 1000/day and `wallet.approve` capped at 1000/day separately means an
+agent using both can still move 2000/day combined. `aggregate_caps`
+closes that: every tool listed in the same group draws from one shared
+running total, e.g.
+
+```yaml
+aggregate_caps:
+  daily_money_movement:
+    tools:
+      wallet.transfer: amount
+      wallet.approve: amount
+    window_seconds: 86400
+    max_unknown_agent: 5
+    max_known_agent: 1000
+```
+
+Only *confirmed* spend counts toward the total: a `BLOCK`ed request never
+adds anything, and a request that's provisionally recorded (because its
+own check passed) is refunded if you later call
+`engine.record_outcome(request_id, "error")` — the same call the
+`enforce()` decorator already makes automatically when the wrapped
+function raises, or when a `WARN` a human rejects results in a
+`BlockedActionError`. Real enforcement of this therefore has the same
+caveat as everything else that depends on `record_outcome` being called:
+it works fully under `enforce()` (see below); under the advisory-only MCP
+server, a provisionally-recorded amount just stays recorded, since
+nothing ever reports back whether the action actually happened. See
+`guardrail/storage/aggregate_spend.py`'s module docstring for the full
+picture.
 
 No code changes needed to adjust any of this — edit the YAML, restart the
 process (or the MCP server).
@@ -182,13 +214,14 @@ pip install -r requirements.txt
 PYTHONPATH=. python3 -m unittest discover -s tests -v
 ```
 
-46 tests: rule evaluation, the full engine pipeline (real SQLite-backed
-rate limiting and audit persistence), the `enforce` decorator (proving a
-`BLOCK` genuinely prevents the wrapped function from running), the
-hand-rolled MCP server's JSON-RPC handling over an actual stdio pipe, the
-confirmation web UI over real HTTP requests against a live server, and a
-dedicated suite that checks the *shipped* `policies/default.yaml` — not
-just synthetic test policies — actually catches what it claims to.
+120 tests: rule evaluation, the full engine pipeline (real SQLite-backed
+rate limiting, aggregate spend tracking, and audit persistence), the
+`enforce` decorator (proving a `BLOCK` genuinely prevents the wrapped
+function from running), the hand-rolled MCP server's JSON-RPC handling
+over an actual stdio pipe, the confirmation web UI over real HTTP
+requests against a live server, and a dedicated suite that checks the
+*shipped* `policies/default.yaml` — not just synthetic test policies —
+actually catches what it claims to.
 
 ---
 

@@ -21,7 +21,9 @@ from guardrail.rules import (
     check_confirmation_required,
     check_domain_rules,
     check_numeric_caps,
+    find_aggregate_contributions,
 )
+from guardrail.storage.aggregate_spend import AggregateSpendTracker
 from guardrail.storage.audit import AuditLog
 from guardrail.storage.rate_limiter import RateLimiter
 
@@ -32,11 +34,13 @@ class GuardrailEngine:
         policy: Policy,
         audit_log: Optional[AuditLog] = None,
         rate_limiter: Optional[RateLimiter] = None,
+        aggregate_tracker: Optional[AggregateSpendTracker] = None,
         known_agent_threshold: int = 3,
     ):
         self.policy = policy
         self.audit_log = audit_log or AuditLog()
         self.rate_limiter = rate_limiter or RateLimiter()
+        self.aggregate_tracker = aggregate_tracker or AggregateSpendTracker()
         # An agent is "known" once it has this many prior recorded decisions —
         # used to relax numeric caps that are tighter for brand-new agents.
         self.known_agent_threshold = known_agent_threshold
@@ -71,6 +75,31 @@ class GuardrailEngine:
         matches += check_domain_rules(request, self.policy)
         matches += check_confirmation_required(request, self.policy)
 
+        # Aggregate caps: a running total shared across every tool listed
+        # in the group (see core/policy.py's AggregateCapRule and
+        # storage/aggregate_spend.py), not each tool's own isolated cap.
+        # find_aggregate_contributions() is pure - it only resolves which
+        # groups this request touches and by how much; the actual
+        # stateful running-total check happens here, against
+        # self.aggregate_tracker.
+        aggregate_warnings, aggregate_contributions = find_aggregate_contributions(request, self.policy)
+        matches += aggregate_warnings
+        for group_name, amount, cap in aggregate_contributions:
+            limit = cap.max_known_agent if is_known else cap.max_unknown_agent
+            if limit is None:
+                continue
+            current_total = self.aggregate_tracker.current_total(request.agent_id, group_name, cap.window_seconds)
+            projected_total = current_total + amount
+            if projected_total > limit:
+                matches.append(RuleMatch(
+                    rule="aggregate_cap_exceeded", severity=Severity.BLOCK,
+                    message=(
+                        f"'{group_name}' aggregate cap: {current_total:g} already spent + "
+                        f"{amount:g} on '{request.tool_name}' = {projected_total:g}, exceeds "
+                        f"cap {limit:g} within {cap.window_seconds}s ({'known' if is_known else 'unknown'} agent)"
+                    ),
+                ))
+
         rl = self.policy.rate_limit_for(request.tool_name)
         rl_result = self.rate_limiter.check_and_record(
             request.agent_id, request.tool_name, rl.max_calls, rl.window_seconds
@@ -91,6 +120,21 @@ class GuardrailEngine:
         else:
             decision_type = Decision.ALLOW
 
+        # Only a non-BLOCK decision provisionally counts toward the
+        # aggregate total - a BLOCKed request never executes (enforce()
+        # raises before the wrapped function runs; see decorator.py), so
+        # recording its amount would inflate the budget with spend that
+        # never really happened. "Provisionally": record_outcome() below
+        # can still refund this if the caller later reports the real
+        # action didn't succeed after all (WARN routed to a human who
+        # rejects it, or the wrapped function raising) - see
+        # AggregateSpendTracker's module docstring for the full picture,
+        # including the honest caveat for integrations that never call
+        # record_outcome() at all.
+        if decision_type != Decision.BLOCK:
+            for group_name, amount, cap in aggregate_contributions:
+                self.aggregate_tracker.record(request.agent_id, group_name, amount, request.request_id, cap.window_seconds)
+
         explanation = [m.message for m in matches] or ["No policy rules matched this action"]
 
         decision = GuardrailDecision(
@@ -106,6 +150,12 @@ class GuardrailEngine:
 
     def record_outcome(self, request_id: str, outcome: str) -> bool:
         """Record what actually happened when a previously-checked action ran."""
+        if outcome != "success":
+            # The action this request represented didn't really execute
+            # (an error, or a WARN a human ultimately rejected) - any
+            # aggregate spend provisionally recorded for it in evaluate()
+            # above must not count against the agent's ongoing total.
+            self.aggregate_tracker.refund(request_id)
         return self.audit_log.record_outcome(request_id, outcome)
 
     def history_for_agent(self, agent_id: str, limit: int = 50) -> List[Dict]:

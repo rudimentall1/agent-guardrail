@@ -16,6 +16,7 @@ from typing import Any, Dict, List
 from guardrail.core.models import ActionRequest
 from guardrail.core.policy import Policy
 from guardrail.engine import GuardrailEngine
+from guardrail.storage.aggregate_spend import AggregateSpendTracker
 from guardrail.storage.audit import AuditLog
 from guardrail.storage.rate_limiter import RateLimiter
 
@@ -46,6 +47,7 @@ def build_engine(policy_path: str, audit_db: str) -> GuardrailEngine:
         policy=policy,
         audit_log=AuditLog(audit_db),
         rate_limiter=RateLimiter(audit_db.replace(".db", "_ratelimit.db")),
+        aggregate_tracker=AggregateSpendTracker(audit_db.replace(".db", "_aggregate.db")),
     )
 
 

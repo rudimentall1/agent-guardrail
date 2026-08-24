@@ -155,6 +155,26 @@ numeric_caps:
     max_known_agent: 100
 
 # ---------------------------------------------------------------------------
+# Aggregate caps: a running total shared across several tools, tracked as
+# one number per agent per group - not each tool's own isolated cap. The
+# numeric_caps above cap wallet.transfer and wallet.approve at 1000/day
+# EACH for a known agent; without an aggregate cap, an agent could still
+# move up to 2000/day combined by splitting across both. This closes that
+# gap: every tool listed here draws from the SAME running total.
+# window_seconds is required per group (numeric_caps has no window - it's
+# a per-call ceiling, not a rate); max_unknown_agent/max_known_agent work
+# exactly like numeric_caps' fields of the same name.
+# ---------------------------------------------------------------------------
+aggregate_caps:
+  daily_money_movement:
+    tools:
+      wallet.transfer: amount
+      wallet.approve: amount
+    window_seconds: 86400
+    max_unknown_agent: 5
+    max_known_agent: 1000
+
+# ---------------------------------------------------------------------------
 # Domain allow/deny checks on a specific argument field. `mode: denylist`
 # blocks listed domains; `mode: allowlist` blocks everything NOT listed
 # (an empty allowlist means "not enforced yet" rather than "deny all").

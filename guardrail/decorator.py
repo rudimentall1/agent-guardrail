@@ -13,19 +13,24 @@ underlying function directly; only the wrapped version is exposed to it.
     @enforce(engine, tool_name="send_email")
     def send_email(agent_id: str, to: str, subject: str, body: str):
         ...  # real side effect — only runs if the decision is ALLOW or WARN
+
+The actual enforcement logic (evaluate, maybe route WARN to a human,
+run the real action only if not blocked, report the real outcome back)
+lives in ``guardrail.enforcement.run_enforced`` - this decorator is a
+thin adapter from "a Python function call" to that shared logic. See
+``guardrail/mcp_enforced_server.py`` for the same guarantee exposed over
+MCP instead of a Python decorator - both use the identical underlying
+implementation, not two independently-maintained copies of it.
 """
 from __future__ import annotations
 
 import functools
 from typing import Callable, Optional
 
-from guardrail.core.models import ActionRequest, Decision, GuardrailDecision
+from guardrail.core.models import ActionRequest, GuardrailDecision
+from guardrail.enforcement import BlockedActionError, run_enforced
 
-
-class BlockedActionError(Exception):
-    def __init__(self, decision: GuardrailDecision):
-        self.decision = decision
-        super().__init__(f"Action blocked by policy: {decision.explanation}")
+__all__ = ["enforce", "BlockedActionError"]
 
 
 def enforce(engine, tool_name: str, agent_id_arg: str = "agent_id",
@@ -53,22 +58,8 @@ def enforce(engine, tool_name: str, agent_id_arg: str = "agent_id",
                 )
 
             request = ActionRequest(agent_id=agent_id, tool_name=tool_name, arguments=dict(kwargs))
-            decision = engine.evaluate(request)
-
-            if decision.decision == Decision.BLOCK:
-                raise BlockedActionError(decision)
-
-            if decision.decision == Decision.WARN and on_warn is not None:
-                if not on_warn(decision):
-                    raise BlockedActionError(decision)
-
-            try:
-                result = func(*args, **kwargs)
-            except Exception:
-                engine.record_outcome(decision.request_id, "error")
-                raise
-            engine.record_outcome(decision.request_id, "success")
-            return result
+            outcome = run_enforced(engine, request, executor=lambda _req: func(*args, **kwargs), on_warn=on_warn)
+            return outcome.result
 
         return wrapper
     return decorator

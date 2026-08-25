@@ -67,7 +67,7 @@ engine, same policy file, same rules.
 
 ---
 
-## Three ways to use it
+## Four ways to use it
 
 ### 1. CLI — for testing a policy by hand
 Shown above. No setup, instant feedback while you write rules.
@@ -115,6 +115,42 @@ def send_email(agent_id: str, to: str, subject: str, body: str):
 Use this if you're building your own agent loop (LangChain, CrewAI, a
 custom MCP host, a Slack bot with tool access). Run `python3
 examples/example_agent_usage.py` to see it block a real function call.
+
+### 4. `guardrail.mcp_enforced_server.EnforcedGuardrailMCPServer` — the real guarantee, over MCP
+
+The MCP server in #2 above is honest about being advisory: the model
+gets a `guardrail_check` tool, but nothing stops it from calling the
+*actual* tool (exposed by some other MCP server, or by the model's own
+direct access) without checking first, or checking one thing and doing
+another. If the model talks to your infrastructure only over MCP - no
+Python decorator possible - this is the same #3 guarantee for that case:
+the operator registers real action executors (the code that holds real
+credentials and performs the real side effect) as the *only* way the
+model can invoke that action at all.
+
+```python
+from guardrail.mcp_enforced_server import EnforcedGuardrailMCPServer
+
+def do_transfer(request):
+    wallet = get_wallet_for(request.agent_id)  # real credentials, held here - never exposed to the model
+    tx_hash = wallet.transfer(to=request.arguments["to"], amount=request.arguments["amount"])
+    return {"tx_hash": tx_hash}
+
+server = EnforcedGuardrailMCPServer(policy_path="policies/default.yaml")
+server.register_action(
+    "wallet.transfer", "Transfer funds from the agent's wallet.",
+    input_schema={"type": "object", "properties": {"to": {"type": "string"}, "amount": {"type": "number"}}, "required": ["to", "amount"]},
+    executor=do_transfer,
+)
+server.serve_stdio()
+```
+
+The model is given exactly one MCP tool named `wallet.transfer` - there
+is no separate, unguarded way to move funds through this server. A BLOCK
+decision means `do_transfer` never runs. Both this and `enforce()` share
+one implementation of "check, maybe route WARN to a human, run only if
+not blocked, report the real outcome back" (`guardrail/enforcement.py`) -
+not two independently-maintained copies of the same guarantee.
 
 ---
 
@@ -190,15 +226,17 @@ aggregate_caps:
 
 Only *confirmed* spend counts toward the total: a `BLOCK`ed request never
 adds anything, and a request that's provisionally recorded (because its
-own check passed) is refunded if you later call
-`engine.record_outcome(request_id, "error")` — the same call the
-`enforce()` decorator already makes automatically when the wrapped
-function raises, or when a `WARN` a human rejects results in a
+own check passed) is refunded if the real action later turns out not to
+have succeeded — `engine.record_outcome(request_id, "error")`, called
+automatically by both `enforce()` and the enforced MCP server (they
+share one implementation of this, `guardrail/enforcement.py`) when the
+real executor raises, or when a `WARN` a human rejects results in a
 `BlockedActionError`. Real enforcement of this therefore has the same
 caveat as everything else that depends on `record_outcome` being called:
-it works fully under `enforce()` (see below); under the advisory-only MCP
-server, a provisionally-recorded amount just stays recorded, since
-nothing ever reports back whether the action actually happened. See
+it works fully under `enforce()` and the enforced MCP server (see
+below); under the *advisory-only* MCP server (#2 above), a
+provisionally-recorded amount just stays recorded, since nothing ever
+reports back whether the action actually happened. See
 `guardrail/storage/aggregate_spend.py`'s module docstring for the full
 picture.
 
@@ -214,14 +252,15 @@ pip install -r requirements.txt
 PYTHONPATH=. python3 -m unittest discover -s tests -v
 ```
 
-120 tests: rule evaluation, the full engine pipeline (real SQLite-backed
+134 tests: rule evaluation, the full engine pipeline (real SQLite-backed
 rate limiting, aggregate spend tracking, and audit persistence), the
-`enforce` decorator (proving a `BLOCK` genuinely prevents the wrapped
-function from running), the hand-rolled MCP server's JSON-RPC handling
-over an actual stdio pipe, the confirmation web UI over real HTTP
-requests against a live server, and a dedicated suite that checks the
-*shipped* `policies/default.yaml` — not just synthetic test policies —
-actually catches what it claims to.
+`enforce` decorator and the enforced MCP server (both proving a `BLOCK`
+genuinely prevents the real action from running, sharing one
+implementation of that guarantee), the advisory MCP server's JSON-RPC
+handling, the confirmation web UI over real HTTP requests against a
+live server, and a dedicated suite that checks the *shipped*
+`policies/default.yaml` — not just synthetic test policies — actually
+catches what it claims to.
 
 ---
 

@@ -4,7 +4,7 @@
 
 📄 [Read the white paper](docs/whitepaper.pdf)
 
-**A policy firewall for AI agent tool calls.**
+**Put a policy firewall between an AI agent and every irreversible action.**
 
 Your agent wants to run a shell command, send an email, or move money.
 Guardrail checks that request against rules you wrote, before it happens,
